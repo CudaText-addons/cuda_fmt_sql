@@ -9,4 +9,4 @@ homepage=https://github.com/CudaText-addons/cuda_fmt_sql_parse
 caption=SQL Format
 method=do_format
 lexers=regex:SQL.*
-config=cuda_sql_format.py
+config=cuda_fmt_sql_parse.py
