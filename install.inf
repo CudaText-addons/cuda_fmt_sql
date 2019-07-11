@@ -1,9 +1,9 @@
 [info]
-title=Formatter for SQL
+title=Formatter for SQL, using sqlparse
 desc=Formats SQL code, using sqlparse library
 type=cudatext-plugin
-subdir=cuda_fmt_sql
-homepage=https://github.com/CudaText-addons/cuda_fmt_sql
+subdir=cuda_fmt_sql_parse
+homepage=https://github.com/CudaText-addons/cuda_fmt_sql_parse
 
 [fmt1]
 caption=SQL Format

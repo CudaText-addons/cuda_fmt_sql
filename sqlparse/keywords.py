@@ -1,4 +1,97 @@
-from sqlparse3 import tokens
+# -*- coding: utf-8 -*-
+#
+# Copyright (C) 2009-2018 the sqlparse authors and contributors
+# <see AUTHORS file>
+#
+# This module is part of python-sqlparse and is released under
+# the BSD License: https://opensource.org/licenses/BSD-3-Clause
+
+import re
+
+from sqlparse import tokens
+
+
+def is_keyword(value):
+    val = value.upper()
+    return (KEYWORDS_COMMON.get(val)
+            or KEYWORDS_ORACLE.get(val)
+            or KEYWORDS_PLPGSQL.get(val)
+            or KEYWORDS.get(val, tokens.Name)), value
+
+
+SQL_REGEX = {
+    'root': [
+        (r'(--|//|# )\+.*?(\r\n|\r|\n|$)', tokens.Comment.Single.Hint),
+        (r'/\*\+[\s\S]*?\*/', tokens.Comment.Multiline.Hint),
+
+        (r'(--|//|# ).*?(\r\n|\r|\n|$)', tokens.Comment.Single),
+        (r'/\*[\s\S]*?\*/', tokens.Comment.Multiline),
+
+        (r'(\r\n|\r|\n)', tokens.Newline),
+        (r'\s+?', tokens.Whitespace),
+
+        (r':=', tokens.Assignment),
+        (r'::', tokens.Punctuation),
+
+        (r'\*', tokens.Wildcard),
+
+        (r"`(``|[^`])*`", tokens.Name),
+        (r"´(´´|[^´])*´", tokens.Name),
+        (r'(\$(?:[_A-ZÀ-Ü]\w*)?\$)[\s\S]*?\1', tokens.Literal),
+
+        (r'\?', tokens.Name.Placeholder),
+        (r'%(\(\w+\))?s', tokens.Name.Placeholder),
+        (r'(?<!\w)[$:?]\w+', tokens.Name.Placeholder),
+
+        (r'\\\w+', tokens.Command),
+
+        # FIXME(andi): VALUES shouldn't be listed here
+        # see https://github.com/andialbrecht/sqlparse/pull/64
+        # IN is special, it may be followed by a parenthesis, but
+        # is never a function, see issue183
+        (r'(CASE|IN|VALUES|USING|FROM)\b', tokens.Keyword),
+
+        (r'(@|##|#)[A-ZÀ-Ü]\w+', tokens.Name),
+
+        # see issue #39
+        # Spaces around period `schema . name` are valid identifier
+        # TODO: Spaces before period not implemented
+        (r'[A-ZÀ-Ü]\w*(?=\s*\.)', tokens.Name),  # 'Name'   .
+        # FIXME(atronah): never match,
+        # because `re.match` doesn't work with look-behind regexp feature
+        (r'(?<=\.)[A-ZÀ-Ü]\w*', tokens.Name),  # .'Name'
+        (r'[A-ZÀ-Ü]\w*(?=\()', tokens.Name),  # side effect: change kw to func
+        (r'-?0x[\dA-F]+', tokens.Number.Hexadecimal),
+        (r'-?\d*(\.\d+)?E-?\d+', tokens.Number.Float),
+        (r'-?(\d+(\.\d*)|\.\d+)', tokens.Number.Float),
+        (r'-?\d+(?![_A-ZÀ-Ü])', tokens.Number.Integer),
+        (r"'(''|\\\\|\\'|[^'])*'", tokens.String.Single),
+        # not a real string literal in ANSI SQL:
+        (r'"(""|\\\\|\\"|[^"])*"', tokens.String.Symbol),
+        (r'(""|".*?[^\\]")', tokens.String.Symbol),
+        # sqlite names can be escaped with [square brackets]. left bracket
+        # cannot be preceded by word character or a right bracket --
+        # otherwise it's probably an array index
+        (r'(?<![\w\])])(\[[^\]]+\])', tokens.Name),
+        (r'((LEFT\s+|RIGHT\s+|FULL\s+)?(INNER\s+|OUTER\s+|STRAIGHT\s+)?'
+         r'|(CROSS\s+|NATURAL\s+)?)?JOIN\b', tokens.Keyword),
+        (r'END(\s+IF|\s+LOOP|\s+WHILE)?\b', tokens.Keyword),
+        (r'NOT\s+NULL\b', tokens.Keyword),
+        (r'UNION\s+ALL\b', tokens.Keyword),
+        (r'CREATE(\s+OR\s+REPLACE)?\b', tokens.Keyword.DDL),
+        (r'DOUBLE\s+PRECISION\b', tokens.Name.Builtin),
+        (r'GROUP\s+BY\b', tokens.Keyword),
+        (r'ORDER\s+BY\b', tokens.Keyword),
+
+        (r'[0-9_A-ZÀ-Ü][_$#\w]*', is_keyword),
+
+        (r'[;:()\[\],\.]', tokens.Punctuation),
+        (r'[<>=~!]+', tokens.Operator.Comparison),
+        (r'[+/@#%^&|`?^-]+', tokens.Operator),
+    ]}
+
+FLAGS = re.IGNORECASE | re.UNICODE
+SQL_REGEX = [(re.compile(rx, FLAGS).match, tt) for rx, tt in SQL_REGEX['root']]
 
 KEYWORDS = {
     'ABORT': tokens.Keyword,
@@ -16,6 +109,7 @@ KEYWORDS = {
     'ANALYSE': tokens.Keyword,
     'ANALYZE': tokens.Keyword,
     'ANY': tokens.Keyword,
+    'ARRAYLEN': tokens.Keyword,
     'ARE': tokens.Keyword,
     'ASC': tokens.Keyword.Order,
     'ASENSITIVE': tokens.Keyword,
@@ -24,7 +118,9 @@ KEYWORDS = {
     'ASYMMETRIC': tokens.Keyword,
     'AT': tokens.Keyword,
     'ATOMIC': tokens.Keyword,
+    'AUDIT': tokens.Keyword,
     'AUTHORIZATION': tokens.Keyword,
+    'AUTO_INCREMENT': tokens.Keyword,
     'AVG': tokens.Keyword,
 
     'BACKWARD': tokens.Keyword,
@@ -53,6 +149,7 @@ KEYWORDS = {
     'CHARACTER_SET_NAME': tokens.Keyword,
     'CHARACTER_SET_SCHEMA': tokens.Keyword,
     'CHAR_LENGTH': tokens.Keyword,
+    'CHARSET': tokens.Keyword,
     'CHECK': tokens.Keyword,
     'CHECKED': tokens.Keyword,
     'CHECKPOINT': tokens.Keyword,
@@ -61,21 +158,24 @@ KEYWORDS = {
     'CLOB': tokens.Keyword,
     'CLOSE': tokens.Keyword,
     'CLUSTER': tokens.Keyword,
-    'COALSECE': tokens.Keyword,
+    'COALESCE': tokens.Keyword,
     'COBOL': tokens.Keyword,
     'COLLATE': tokens.Keyword,
     'COLLATION': tokens.Keyword,
     'COLLATION_CATALOG': tokens.Keyword,
     'COLLATION_NAME': tokens.Keyword,
     'COLLATION_SCHEMA': tokens.Keyword,
+    'COLLECT': tokens.Keyword,
     'COLUMN': tokens.Keyword,
     'COLUMN_NAME': tokens.Keyword,
+    'COMPRESS': tokens.Keyword,
     'COMMAND_FUNCTION': tokens.Keyword,
     'COMMAND_FUNCTION_CODE': tokens.Keyword,
     'COMMENT': tokens.Keyword,
-    'COMMIT': tokens.Keyword,
+    'COMMIT': tokens.Keyword.DML,
     'COMMITTED': tokens.Keyword,
     'COMPLETION': tokens.Keyword,
+    'CONCURRENTLY': tokens.Keyword,
     'CONDITION_NUMBER': tokens.Keyword,
     'CONNECT': tokens.Keyword,
     'CONNECTION': tokens.Keyword,
@@ -132,6 +232,7 @@ KEYWORDS = {
     'DETERMINISTIC': tokens.Keyword,
     'DIAGNOSTICS': tokens.Keyword,
     'DICTIONARY': tokens.Keyword,
+    'DISABLE': tokens.Keyword,
     'DISCONNECT': tokens.Keyword,
     'DISPATCH': tokens.Keyword,
     'DO': tokens.Keyword,
@@ -141,28 +242,33 @@ KEYWORDS = {
     'DYNAMIC_FUNCTION_CODE': tokens.Keyword,
 
     'EACH': tokens.Keyword,
+    'ENABLE': tokens.Keyword,
     'ENCODING': tokens.Keyword,
     'ENCRYPTED': tokens.Keyword,
     'END-EXEC': tokens.Keyword,
+    'ENGINE': tokens.Keyword,
     'EQUALS': tokens.Keyword,
     'ESCAPE': tokens.Keyword,
     'EVERY': tokens.Keyword,
     'EXCEPT': tokens.Keyword,
-    'ESCEPTION': tokens.Keyword,
+    'EXCEPTION': tokens.Keyword,
     'EXCLUDING': tokens.Keyword,
     'EXCLUSIVE': tokens.Keyword,
     'EXEC': tokens.Keyword,
     'EXECUTE': tokens.Keyword,
     'EXISTING': tokens.Keyword,
     'EXISTS': tokens.Keyword,
+    'EXPLAIN': tokens.Keyword,
     'EXTERNAL': tokens.Keyword,
     'EXTRACT': tokens.Keyword,
 
     'FALSE': tokens.Keyword,
     'FETCH': tokens.Keyword,
+    'FILE': tokens.Keyword,
     'FINAL': tokens.Keyword,
     'FIRST': tokens.Keyword,
     'FORCE': tokens.Keyword,
+    'FOREACH': tokens.Keyword,
     'FOREIGN': tokens.Keyword,
     'FORTRAN': tokens.Keyword,
     'FORWARD': tokens.Keyword,
@@ -187,8 +293,10 @@ KEYWORDS = {
     'HAVING': tokens.Keyword,
     'HIERARCHY': tokens.Keyword,
     'HOLD': tokens.Keyword,
+    'HOUR': tokens.Keyword,
     'HOST': tokens.Keyword,
 
+    'IDENTIFIED': tokens.Keyword,
     'IDENTITY': tokens.Keyword,
     'IGNORE': tokens.Keyword,
     'ILIKE': tokens.Keyword,
@@ -204,6 +312,7 @@ KEYWORDS = {
     'INDITCATOR': tokens.Keyword,
     'INFIX': tokens.Keyword,
     'INHERITS': tokens.Keyword,
+    'INITIAL': tokens.Keyword,
     'INITIALIZE': tokens.Keyword,
     'INITIALLY': tokens.Keyword,
     'INOUT': tokens.Keyword,
@@ -247,12 +356,14 @@ KEYWORDS = {
     # 'M': tokens.Keyword,
     'MAP': tokens.Keyword,
     'MATCH': tokens.Keyword,
+    'MAXEXTENTS': tokens.Keyword,
     'MAXVALUE': tokens.Keyword,
     'MESSAGE_LENGTH': tokens.Keyword,
     'MESSAGE_OCTET_LENGTH': tokens.Keyword,
     'MESSAGE_TEXT': tokens.Keyword,
     'METHOD': tokens.Keyword,
     'MINUTE': tokens.Keyword,
+    'MINUS': tokens.Keyword,
     'MINVALUE': tokens.Keyword,
     'MOD': tokens.Keyword,
     'MODE': tokens.Keyword,
@@ -271,13 +382,17 @@ KEYWORDS = {
     'NEW': tokens.Keyword,
     'NEXT': tokens.Keyword,
     'NO': tokens.Keyword,
+    'NOAUDIT': tokens.Keyword,
+    'NOCOMPRESS': tokens.Keyword,
     'NOCREATEDB': tokens.Keyword,
     'NOCREATEUSER': tokens.Keyword,
     'NONE': tokens.Keyword,
     'NOT': tokens.Keyword,
+    'NOTFOUND': tokens.Keyword,
     'NOTHING': tokens.Keyword,
     'NOTIFY': tokens.Keyword,
     'NOTNULL': tokens.Keyword,
+    'NOWAIT': tokens.Keyword,
     'NULL': tokens.Keyword,
     'NULLABLE': tokens.Keyword,
     'NULLIF': tokens.Keyword,
@@ -286,9 +401,11 @@ KEYWORDS = {
     'OCTET_LENGTH': tokens.Keyword,
     'OF': tokens.Keyword,
     'OFF': tokens.Keyword,
+    'OFFLINE': tokens.Keyword,
     'OFFSET': tokens.Keyword,
     'OIDS': tokens.Keyword,
     'OLD': tokens.Keyword,
+    'ONLINE': tokens.Keyword,
     'ONLY': tokens.Keyword,
     'OPEN': tokens.Keyword,
     'OPERATION': tokens.Keyword,
@@ -303,6 +420,8 @@ KEYWORDS = {
     'OVERRIDING': tokens.Keyword,
     'OWNER': tokens.Keyword,
 
+    'QUARTER': tokens.Keyword,
+
     'PAD': tokens.Keyword,
     'PARAMETER': tokens.Keyword,
     'PARAMETERS': tokens.Keyword,
@@ -314,6 +433,7 @@ KEYWORDS = {
     'PARAMATER_SPECIFIC_SCHEMA': tokens.Keyword,
     'PARTIAL': tokens.Keyword,
     'PASCAL': tokens.Keyword,
+    'PCTFREE': tokens.Keyword,
     'PENDANT': tokens.Keyword,
     'PLACING': tokens.Keyword,
     'PLI': tokens.Keyword,
@@ -332,6 +452,7 @@ KEYWORDS = {
     'PUBLIC': tokens.Keyword,
 
     'RAISE': tokens.Keyword,
+    'RAW': tokens.Keyword,
     'READ': tokens.Keyword,
     'READS': tokens.Keyword,
     'RECHECK': tokens.Keyword,
@@ -344,6 +465,7 @@ KEYWORDS = {
     'RENAME': tokens.Keyword,
     'REPEATABLE': tokens.Keyword,
     'RESET': tokens.Keyword,
+    'RESOURCE': tokens.Keyword,
     'RESTART': tokens.Keyword,
     'RESTRICT': tokens.Keyword,
     'RESULT': tokens.Keyword,
@@ -351,11 +473,12 @@ KEYWORDS = {
     'RETURNED_LENGTH': tokens.Keyword,
     'RETURNED_OCTET_LENGTH': tokens.Keyword,
     'RETURNED_SQLSTATE': tokens.Keyword,
+    'RETURNING': tokens.Keyword,
     'RETURNS': tokens.Keyword,
     'REVOKE': tokens.Keyword,
     'RIGHT': tokens.Keyword,
     'ROLE': tokens.Keyword,
-    'ROLLBACK': tokens.Keyword,
+    'ROLLBACK': tokens.Keyword.DML,
     'ROLLUP': tokens.Keyword,
     'ROUTINE': tokens.Keyword,
     'ROUTINE_CATALOG': tokens.Keyword,
@@ -377,6 +500,7 @@ KEYWORDS = {
     'SECURITY': tokens.Keyword,
     'SELF': tokens.Keyword,
     'SENSITIVE': tokens.Keyword,
+    'SEQUENCE': tokens.Keyword,
     'SERIALIZABLE': tokens.Keyword,
     'SERVER_NAME': tokens.Keyword,
     'SESSION': tokens.Keyword,
@@ -395,14 +519,15 @@ KEYWORDS = {
     'SPECIFICTYPE': tokens.Keyword,
     'SPECIFIC_NAME': tokens.Keyword,
     'SQL': tokens.Keyword,
+    'SQLBUF': tokens.Keyword,
     'SQLCODE': tokens.Keyword,
     'SQLERROR': tokens.Keyword,
     'SQLEXCEPTION': tokens.Keyword,
     'SQLSTATE': tokens.Keyword,
     'SQLWARNING': tokens.Keyword,
     'STABLE': tokens.Keyword,
-    'START': tokens.Keyword,
-    'STATE': tokens.Keyword,
+    'START': tokens.Keyword.DML,
+    # 'STATE': tokens.Keyword,
     'STATEMENT': tokens.Keyword,
     'STATIC': tokens.Keyword,
     'STATISTICS': tokens.Keyword,
@@ -415,8 +540,10 @@ KEYWORDS = {
     'SUBCLASS_ORIGIN': tokens.Keyword,
     'SUBLIST': tokens.Keyword,
     'SUBSTRING': tokens.Keyword,
+    'SUCCESSFUL': tokens.Keyword,
     'SUM': tokens.Keyword,
     'SYMMETRIC': tokens.Keyword,
+    'SYNONYM': tokens.Keyword,
     'SYSID': tokens.Keyword,
     'SYSTEM': tokens.Keyword,
     'SYSTEM_USER': tokens.Keyword,
@@ -453,6 +580,7 @@ KEYWORDS = {
     'TRUSTED': tokens.Keyword,
     'TYPE': tokens.Keyword,
 
+    'UID': tokens.Keyword,
     'UNCOMMITTED': tokens.Keyword,
     'UNDER': tokens.Keyword,
     'UNENCRYPTED': tokens.Keyword,
@@ -474,6 +602,7 @@ KEYWORDS = {
 
     'VACUUM': tokens.Keyword,
     'VALID': tokens.Keyword,
+    'VALIDATE': tokens.Keyword,
     'VALIDATOR': tokens.Keyword,
     'VALUES': tokens.Keyword,
     'VARIABLE': tokens.Keyword,
@@ -482,8 +611,9 @@ KEYWORDS = {
     'VIEW': tokens.Keyword,
     'VOLATILE': tokens.Keyword,
 
+    'WEEK': tokens.Keyword,
     'WHENEVER': tokens.Keyword,
-    'WITH': tokens.Keyword,
+    'WITH': tokens.Keyword.CTE,
     'WITHOUT': tokens.Keyword,
     'WORK': tokens.Keyword,
     'WRITE': tokens.Keyword,
@@ -492,7 +622,7 @@ KEYWORDS = {
 
     'ZONE': tokens.Keyword,
 
-
+    # Name.Builtin
     'ARRAY': tokens.Name.Builtin,
     'BIGINT': tokens.Name.Builtin,
     'BINARY': tokens.Name.Builtin,
@@ -506,29 +636,37 @@ KEYWORDS = {
     'DECIMAL': tokens.Name.Builtin,
     'FLOAT': tokens.Name.Builtin,
     'INT': tokens.Name.Builtin,
+    'INT8': tokens.Name.Builtin,
     'INTEGER': tokens.Name.Builtin,
     'INTERVAL': tokens.Name.Builtin,
     'LONG': tokens.Name.Builtin,
     'NUMBER': tokens.Name.Builtin,
     'NUMERIC': tokens.Name.Builtin,
     'REAL': tokens.Name.Builtin,
+    'ROWID': tokens.Name.Builtin,
+    'ROWLABEL': tokens.Name.Builtin,
+    'ROWNUM': tokens.Name.Builtin,
     'SERIAL': tokens.Name.Builtin,
+    'SERIAL8': tokens.Name.Builtin,
+    'SIGNED': tokens.Name.Builtin,
     'SMALLINT': tokens.Name.Builtin,
+    'SYSDATE': tokens.Name,
+    'TEXT': tokens.Name.Builtin,
+    'TINYINT': tokens.Name.Builtin,
+    'UNSIGNED': tokens.Name.Builtin,
     'VARCHAR': tokens.Name.Builtin,
     'VARCHAR2': tokens.Name.Builtin,
     'VARYING': tokens.Name.Builtin,
-    'INT8': tokens.Name.Builtin,
-    'SERIAL8': tokens.Name.Builtin,
-    'TEXT': tokens.Name.Builtin,
 }
-
 
 KEYWORDS_COMMON = {
     'SELECT': tokens.Keyword.DML,
     'INSERT': tokens.Keyword.DML,
     'DELETE': tokens.Keyword.DML,
     'UPDATE': tokens.Keyword.DML,
+    'UPSERT': tokens.Keyword.DML,
     'REPLACE': tokens.Keyword.DML,
+    'MERGE': tokens.Keyword.DML,
     'DROP': tokens.Keyword.DDL,
     'CREATE': tokens.Keyword.DDL,
     'ALTER': tokens.Keyword.DDL,
@@ -559,10 +697,160 @@ KEYWORDS_COMMON = {
     'AS': tokens.Keyword,
     'ELSE': tokens.Keyword,
     'FOR': tokens.Keyword,
+    'WHILE': tokens.Keyword,
 
     'CASE': tokens.Keyword,
     'WHEN': tokens.Keyword,
     'MIN': tokens.Keyword,
     'MAX': tokens.Keyword,
     'DISTINCT': tokens.Keyword,
+}
+
+KEYWORDS_ORACLE = {
+    'ARCHIVE': tokens.Keyword,
+    'ARCHIVELOG': tokens.Keyword,
+
+    'BACKUP': tokens.Keyword,
+    'BECOME': tokens.Keyword,
+    'BLOCK': tokens.Keyword,
+    'BODY': tokens.Keyword,
+
+    'CANCEL': tokens.Keyword,
+    'CHANGE': tokens.Keyword,
+    'COMPILE': tokens.Keyword,
+    'CONTENTS': tokens.Keyword,
+    'CONTROLFILE': tokens.Keyword,
+
+    'DATAFILE': tokens.Keyword,
+    'DBA': tokens.Keyword,
+    'DISMOUNT': tokens.Keyword,
+    'DOUBLE': tokens.Keyword,
+    'DUMP': tokens.Keyword,
+
+    'EVENTS': tokens.Keyword,
+    'EXCEPTIONS': tokens.Keyword,
+    'EXPLAIN': tokens.Keyword,
+    'EXTENT': tokens.Keyword,
+    'EXTERNALLY': tokens.Keyword,
+
+    'FLUSH': tokens.Keyword,
+    'FREELIST': tokens.Keyword,
+    'FREELISTS': tokens.Keyword,
+
+    # groups seems too common as table name
+    # 'GROUPS': tokens.Keyword,
+
+    'INDICATOR': tokens.Keyword,
+    'INITRANS': tokens.Keyword,
+    'INSTANCE': tokens.Keyword,
+
+    'LAYER': tokens.Keyword,
+    'LINK': tokens.Keyword,
+    'LISTS': tokens.Keyword,
+    'LOGFILE': tokens.Keyword,
+
+    'MANAGE': tokens.Keyword,
+    'MANUAL': tokens.Keyword,
+    'MAXDATAFILES': tokens.Keyword,
+    'MAXINSTANCES': tokens.Keyword,
+    'MAXLOGFILES': tokens.Keyword,
+    'MAXLOGHISTORY': tokens.Keyword,
+    'MAXLOGMEMBERS': tokens.Keyword,
+    'MAXTRANS': tokens.Keyword,
+    'MINEXTENTS': tokens.Keyword,
+    'MODULE': tokens.Keyword,
+    'MOUNT': tokens.Keyword,
+
+    'NOARCHIVELOG': tokens.Keyword,
+    'NOCACHE': tokens.Keyword,
+    'NOCYCLE': tokens.Keyword,
+    'NOMAXVALUE': tokens.Keyword,
+    'NOMINVALUE': tokens.Keyword,
+    'NOORDER': tokens.Keyword,
+    'NORESETLOGS': tokens.Keyword,
+    'NORMAL': tokens.Keyword,
+    'NOSORT': tokens.Keyword,
+
+    'OPTIMAL': tokens.Keyword,
+    'OWN': tokens.Keyword,
+
+    'PACKAGE': tokens.Keyword,
+    'PARALLEL': tokens.Keyword,
+    'PCTINCREASE': tokens.Keyword,
+    'PCTUSED': tokens.Keyword,
+    'PLAN': tokens.Keyword,
+    'PRIVATE': tokens.Keyword,
+    'PROFILE': tokens.Keyword,
+
+    'QUOTA': tokens.Keyword,
+
+    'RECOVER': tokens.Keyword,
+    'RESETLOGS': tokens.Keyword,
+    'RESTRICTED': tokens.Keyword,
+    'REUSE': tokens.Keyword,
+    'ROLES': tokens.Keyword,
+
+    'SAVEPOINT': tokens.Keyword,
+    'SCN': tokens.Keyword,
+    'SECTION': tokens.Keyword,
+    'SEGMENT': tokens.Keyword,
+    'SHARED': tokens.Keyword,
+    'SNAPSHOT': tokens.Keyword,
+    'SORT': tokens.Keyword,
+    'STATEMENT_ID': tokens.Keyword,
+    'STOP': tokens.Keyword,
+    'SWITCH': tokens.Keyword,
+
+    'TABLES': tokens.Keyword,
+    'TABLESPACE': tokens.Keyword,
+    'THREAD': tokens.Keyword,
+    'TIME': tokens.Keyword,
+    'TRACING': tokens.Keyword,
+    'TRANSACTION': tokens.Keyword,
+    'TRIGGERS': tokens.Keyword,
+
+    'UNLIMITED': tokens.Keyword,
+    'UNLOCK': tokens.Keyword,
+}
+
+# PostgreSQL Syntax
+KEYWORDS_PLPGSQL = {
+    'PARTITION': tokens.Keyword,
+    'OVER': tokens.Keyword,
+    'PERFORM': tokens.Keyword,
+    'NOTICE': tokens.Keyword,
+    'PLPGSQL': tokens.Keyword,
+    'INHERIT': tokens.Keyword,
+    'INDEXES': tokens.Keyword,
+
+    'BYTEA': tokens.Keyword,
+    'BIGSERIAL': tokens.Keyword,
+    'BIT VARYING': tokens.Keyword,
+    'BOX': tokens.Keyword,
+    'CHARACTER': tokens.Keyword,
+    'CHARACTER VARYING': tokens.Keyword,
+    'CIDR': tokens.Keyword,
+    'CIRCLE': tokens.Keyword,
+    'DOUBLE PRECISION': tokens.Keyword,
+    'INET': tokens.Keyword,
+    'JSON': tokens.Keyword,
+    'JSONB': tokens.Keyword,
+    'LINE': tokens.Keyword,
+    'LSEG': tokens.Keyword,
+    'MACADDR': tokens.Keyword,
+    'MONEY': tokens.Keyword,
+    'PATH': tokens.Keyword,
+    'PG_LSN': tokens.Keyword,
+    'POINT': tokens.Keyword,
+    'POLYGON': tokens.Keyword,
+    'SMALLSERIAL': tokens.Keyword,
+    'TSQUERY': tokens.Keyword,
+    'TSVECTOR': tokens.Keyword,
+    'TXID_SNAPSHOT': tokens.Keyword,
+    'UUID': tokens.Keyword,
+    'XML': tokens.Keyword,
+
+    'FOR': tokens.Keyword,
+    'IN': tokens.Keyword,
+    'LOOP': tokens.Keyword,
 }
